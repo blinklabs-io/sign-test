@@ -1,0 +1,146 @@
+name: publish
+
+on:
+  push:
+    branches: ['main']
+    tags:
+      - 'v*.*.*'
+
+concurrency: ${{ github.ref }}
+
+jobs:
+  create-draft-release:
+    runs-on: ubuntu-latest
+    outputs:
+      RELEASE_ID: ${{ steps.create-release.outputs.result }}
+    steps:
+      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
+      - uses: actions/github-script@v7
+        id: create-release
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: string
+          script: |
+            try {
+              const response = await github.rest.repos.createRelease({
+                draft: true,
+                generate_release_notes: true,
+                name: process.env.RELEASE_TAG,
+                owner: context.repo.owner,
+                prerelease: false,
+                repo: context.repo.repo,
+                tag_name: process.env.RELEASE_TAG,
+              });
+
+              return response.data.id;
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+
+  build-binaries:
+    strategy:
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64]
+    runs-on: ubuntu-latest
+    needs: [create-draft-release]
+    permissions:
+      actions: write
+      attestations: write
+      checks: write
+      contents: write
+      id-token: write
+      packages: write
+      statuses: write
+    steps:
+      - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.x
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: 'temurin'
+      - name: Build binary
+        run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
+      - id: 'auth'
+        name: Authenticate with Google Cloud
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.CERTIFICATE_SA_CREDENTIALS }}'
+      - name: Set up Cloud SDK
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        uses: 'google-github-actions/setup-gcloud@v2'
+      - name: Sign windows binary
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        run: |
+          echo "Downloading jsign.jar"
+          curl -L -o jsign.jar https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar
+          echo "Verifying jsign.jar checksum"
+          echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
+          echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
+          set +x
+          _filename=adder
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo "::add-mask::$ACCESS_TOKEN"
+          java -jar jsign.jar \
+            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} \
+            --storepass "$ACCESS_TOKEN" \
+            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} \
+            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} \
+            --certfile codesign-chain.pem \
+            --tsmode RFC3161 \
+            --tsaurl http://timestamp.globalsign.com/tsa/r6advanced1 \
+            ${_filename}
+          unset ACCESS_TOKEN
+          set -x
+          echo "Signed Windows binary: ${_filename}"
+          echo "Cleaning up certificate chain"
+          rm -f codesign-chain.pem
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          _filename=adder-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
+          if [[ ${{ matrix.os }} == windows ]]; then
+            _filename=${_filename}.exe
+          fi
+          cp adder ${_filename}
+          curl \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @${_filename} \
+            https://uploads.github.com/repos/${{ github.repository_owner }}/adder/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+      - name: Attest binary
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'adder'
+
+  finalize-release:
+    runs-on: ubuntu-latest
+    needs: [create-draft-release, build-binaries]
+    steps:
+      - uses: actions/github-script@v7
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: ${{ needs.create-draft-release.outputs.RELEASE_ID }},
+                draft: false,
+              });
+            } catch (error) {
+              core.setFailed(error.message);
+            }
+      # This updates the documentation on pkg.go.dev and the latest version available via the Go module proxy
+      - name: Pull new module version
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: andrewslotin/go-proxy-pull-action@v1.2.0
