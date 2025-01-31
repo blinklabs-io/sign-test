@@ -151,7 +151,8 @@ jobs:
             cp sign-test ${_filename}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            _filename=SignTest.app
+            _filename=SignTest.zip
+            zip -r ${_filename} SignTest.app
           fi
           curl \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
