@@ -41,16 +41,16 @@ jobs:
   build-binaries:
     strategy:
       matrix:
-        runner: [ubuntu-latest, ubuntu-latest, macos-latest]
-        os: [linux, windows, darwin]
-        arch: [amd64]
         include:
           - runner: ubuntu-latest
             os: linux
+            arch: amd64
           - runner: ubuntu-latest
             os: windows
+            arch: amd64
           - runner: macos-latest
             os: darwin
+            arch: amd64
     runs-on: ${{ matrix.runner }}
     needs: [create-draft-release]
     permissions:
