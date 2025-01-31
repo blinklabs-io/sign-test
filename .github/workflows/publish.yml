@@ -151,7 +151,7 @@ jobs:
             cp sign-test ${_filename}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            _filename=SignTest.zip
+            _filename=sign-test-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
             zip -r ${_filename} SignTest.app
           fi
           curl \
