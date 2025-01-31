@@ -117,10 +117,10 @@ jobs:
       - name: Create .app package and sign macos binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
         run: |
-#          echo "Decoding and importing Apple certificate..."
-#          echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > apple_certificate.p12
-#          security import apple_certificate.p12 -k ~/Library/Keychains/login.keychain-db -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-#          security set-key-partition-list -S apple-tool:,codesign: -k "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ~/Library/Keychains/login.keychain-db
+          # echo "Decoding and importing Apple certificate..."
+          # echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > apple_certificate.p12
+          # security import apple_certificate.p12 -k ~/Library/Keychains/login.keychain-db -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          # security set-key-partition-list -S apple-tool:,codesign: -k "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ~/Library/Keychains/login.keychain-db
           echo "Packaging sign-test..."
           mkdir -p SignTest.app/Contents/MacOS
           mkdir -p SignTest.app/Contents/Resources
@@ -144,14 +144,14 @@ jobs:
           </dict>
           </plist>
           EOF
-#          codesign --deep --force --options runtime \
-#            --sign "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" \
-#            SignTest.app
-#          zip -r SignTest.zip SignTest.app
-#          xcrun notarytool submit SignTest.zip --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-#            --apple-id "${{ secrets.APPLE_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
-#            --wait
-#          xcrun stapler staple SignTest.app
+          # codesign --deep --force --options runtime \
+          #   --sign "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" \
+          #   SignTest.app
+          # zip -r SignTest.zip SignTest.app
+          # xcrun notarytool submit SignTest.zip --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+          #   --apple-id "${{ secrets.APPLE_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+          #   --wait
+          # xcrun stapler staple SignTest.app
       - name: Upload release assets
         if: startsWith(github.ref, 'refs/tags/')
         run: |
