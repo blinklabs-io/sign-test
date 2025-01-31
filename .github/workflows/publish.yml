@@ -41,9 +41,10 @@ jobs:
   build-binaries:
     strategy:
       matrix:
-        os: [linux, darwin, windows]
+        runner: [ubuntu-latest, macos-latest]
+        os: [linux, windows]
         arch: [amd64]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: [create-draft-release]
     permissions:
       actions: write
@@ -66,8 +67,12 @@ jobs:
         with:
           java-version: 17
           distribution: 'temurin'
-      - name: Build binary
+      - name: Build binaries for windows and linux.
+        if: ${{ matrix.runner == 'ubuntu-latest' }}
         run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
+      - name: Build binaries for macos.
+        if: ${{ matrix.runner == 'macos-latest' }}
+        run: GOOS=darwin GOARCH=${{ matrix.arch }} make build
       - id: 'auth'
         name: Authenticate with Google Cloud
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
@@ -103,6 +108,47 @@ jobs:
           echo "Signed Windows binary: ${_filename}"
           echo "Cleaning up certificate chain"
           rm -f codesign-chain.pem
+      - name: Sign linux binary
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'linux' }}
+        run: echo 'signing linux binary'
+      - name: Create .app package and sign macos binary
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.runner == 'macos-latest' }}
+        run: |
+          echo "Decoding and importing Apple certificate..."
+          echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > apple_certificate.p12
+          security import apple_certificate.p12 -k ~/Library/Keychains/login.keychain-db -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,codesign: -k "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ~/Library/Keychains/login.keychain-db
+          echo "Packaging sign-test..."
+          mkdir -p SignTest.app/Contents/MacOS
+          mkdir -p SignTest.app/Contents/Resources
+          cp sign-test SignTest.app/Contents/MacOS/sign-test
+          chmod +x SignTest.app/Contents/MacOS/sign-test
+          cat <<EOF > SignTest.app/Contents/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>sign-test</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.blinklabssoftware.sign-test</string>
+              <key>CFBundleName</key>
+              <string>SignTest</string>
+              <key>CFBundleVersion</key>
+              <string>${{ env.RELEASE_TAG }}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${{ env.RELEASE_TAG }}</string>
+          </dict>
+          </plist>
+          EOF
+          codesign --deep --force --options runtime \
+            --sign "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" \
+            SignTest.app
+          zip -r SignTest.zip SignTest.app
+          xcrun notarytool submit SignTest.zip --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --apple-id "${{ secrets.APPLE_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --wait
+          xcrun stapler staple SignTest.app
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
