@@ -61,6 +61,8 @@ jobs:
       id-token: write
       packages: write
       statuses: write
+    env:
+      APPLICATION_NAME: 'sign-test'
     steps:
       - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -94,7 +96,7 @@ jobs:
           echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
           echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
           set +x
-          _filename=sign-test
+          _filename=${{ env.APPLICATION_NAME }}
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "::add-mask::$ACCESS_TOKEN"
           java -jar jsign.jar \
@@ -113,7 +115,16 @@ jobs:
           rm -f codesign-chain.pem
       - name: Sign linux binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'linux' }}
-        run: echo 'signing linux binary'
+        run: |
+          echo "Decoding and importing GPG Release Signing Key..."
+          echo "${{ secrets.GPG_RELEASE_SIGNING_PRIVATE_KEY }}" | base64 --decode | gpg --batch --import
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --reload gpg-agent
+          gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_RELEASE_SIGNING_KEY_PASSPHRASE }}" \
+              --detach-sign --armor \
+              -o ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
+          gpg --verify ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
+          echo -n "${{ secrets.GPG_RELEASE_SIGNING_PUBLIC_KEY }}" | base64 --decode -o blinklabs-io-release-signing-key.asc
       - name: Create .app package and sign macos binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
         run: |
@@ -125,57 +136,70 @@ jobs:
           security unlock-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
           security import apple_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-          echo "Packaging sign-test..."
-          mkdir -p SignTest.app/Contents/MacOS
-          mkdir -p SignTest.app/Contents/Resources
-          cp sign-test SignTest.app/Contents/MacOS/sign-test
-          chmod +x SignTest.app/Contents/MacOS/sign-test
-          cat <<EOF > SignTest.app/Contents/Info.plist
+          echo "Packaging ${{ env.APPLICATION_NAME }}..."
+          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/MacOS
+          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/Resources
+          cp ${{ env.APPLICATION_NAME }} ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          chmod +x ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          export RELEASE_TAG="${{ env.RELEASE_TAG }}"
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+          cat <<EOF > ${{ env.APPLICATION_NAME }}.app/Contents/Info.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleExecutable</key>
-              <string>sign-test</string>
+              <string>${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleIdentifier</key>
-              <string>com.blinklabssoftware.sign-test</string>
+              <string>com.blinklabssoftware.${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleName</key>
-              <string>SignTest</string>
+              <string>${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleVersion</key>
-              <string>${{ env.RELEASE_TAG }}</string>
+              <string>${CLEAN_VERSION}</string>
               <key>CFBundleShortVersionString</key>
-              <string>${{ env.RELEASE_TAG }}</string>
+              <string>${CLEAN_VERSION}</string>
           </dict>
           </plist>
           EOF
-          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime SignTest.app -v
+          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime ${{ env.APPLICATION_NAME }}.app -v
           xcrun notarytool store-credentials "notarytool-profile" --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
-          ditto -c -k --keepParent "SignTest.app" "notarization.zip"
+          ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
           xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
-          xcrun stapler staple "SignTest.app"
+          xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
       - name: Upload release assets
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          _filename=sign-test-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
+          _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             _filename=${_filename}.exe
           fi
           if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" ]]; then
-            cp sign-test ${_filename}
+            cp ${{ env.APPLICATION_NAME }} ${_filename}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            _filename=sign-test-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
-            zip -r ${_filename} SignTest.app
+            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
+            zip -r ${_filename} ${{ env.APPLICATION_NAME }}.app
           fi
-          curl \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @${_filename} \
-            https://uploads.github.com/repos/${{ github.repository_owner }}/sign-test/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+          if [[ "${{ matrix.os }}" == "linux" ]]; then
+            for file in ${_filename} ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig blinklabs-io-release-signing-key.asc; do
+              curl \
+                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$file" \
+                "https://uploads.github.com/repos/${{ github.github_repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$(basename "$file")"
+            done
+          fi
+          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "darwin" ]]; then 
+            curl \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @${_filename} \
+              https://uploads.github.com/repos/${{ github.github_repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+          fi
       - name: Attest binary
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: 'sign-test'
+          subject-path: '${{ env.APPLICATION_NAME }}'
 
   finalize-release:
     runs-on: ubuntu-latest
