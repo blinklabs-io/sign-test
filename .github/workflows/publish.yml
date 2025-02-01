@@ -124,7 +124,7 @@ jobs:
               --detach-sign --armor \
               -o ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
           gpg --verify ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
-          echo -n "${{ secrets.GPG_RELEASE_SIGNING_PUBLIC_KEY }}" | base64 --decode -o blinklabs-io-release-signing-key.asc
+          echo -n "${{ secrets.GPG_RELEASE_SIGNING_PUBLIC_KEY }}" | base64 --decode > blinklabs-io-release-signing-key.asc
       - name: Create .app package and sign macos binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
         run: |
