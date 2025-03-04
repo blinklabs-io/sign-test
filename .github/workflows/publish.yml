@@ -11,6 +11,8 @@ concurrency: ${{ github.ref }}
 jobs:
   create-draft-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       RELEASE_ID: ${{ steps.create-release.outputs.result }}
     steps:
@@ -42,15 +44,27 @@ jobs:
     strategy:
       matrix:
         include:
+          - runner: macos-latest
+            os: darwin
+            arch: arm64
+          - runner: ubuntu-latest
+            os: freebsd
+            arch: amd64
+          - runner: ubuntu-latest
+            os: freebsd
+            arch: arm64
           - runner: ubuntu-latest
             os: linux
             arch: amd64
           - runner: ubuntu-latest
+            os: linux
+            arch: arm64
+          - runner: ubuntu-latest
             os: windows
             arch: amd64
-          - runner: macos-latest
-            os: darwin
-            arch: amd64
+          - runner: ubuntu-latest
+            os: windows
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     needs: [create-draft-release]
     permissions:
@@ -70,14 +84,17 @@ jobs:
           fetch-depth: '0'
       - uses: actions/setup-go@v5
         with:
-          go-version: 1.22.x
+          go-version: 1.23.x
+      - name: Build binary
+        run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
+
+      # Sign Windows build
       - name: Set up Java
         uses: actions/setup-java@v4
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         with:
           java-version: 17
           distribution: 'temurin'
-      - name: Build binaries
-        run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} make build
       - id: 'auth'
         name: Authenticate with Google Cloud
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
@@ -113,6 +130,9 @@ jobs:
           echo "Signed Windows binary: ${_filename}"
           echo "Cleaning up certificate chain"
           rm -f codesign-chain.pem
+
+      # Sign Linux build
+
       - name: Sign linux binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'linux' }}
         run: |
@@ -125,6 +145,9 @@ jobs:
               -o ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
           gpg --verify ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
           echo -n "${{ secrets.GPG_RELEASE_SIGNING_PUBLIC_KEY }}" | base64 --decode > blinklabs-io-release-signing-key.asc
+
+      # Sign MacOS build
+
       - name: Create .app package and sign macos binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
         run: |
@@ -141,6 +164,7 @@ jobs:
           mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/Resources
           cp ${{ env.APPLICATION_NAME }} ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
           chmod +x ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          cp .github/assets/${{ env.APPLICATION_NAME }}.icns ${{ env.APPLICATION_NAME }}.app/Contents/Resources
           export RELEASE_TAG="${{ env.RELEASE_TAG }}"
           CLEAN_VERSION="${RELEASE_TAG#v}"
           cat <<EOF > ${{ env.APPLICATION_NAME }}.app/Contents/Info.plist
@@ -154,6 +178,8 @@ jobs:
               <string>com.blinklabssoftware.${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleName</key>
               <string>${{ env.APPLICATION_NAME }}</string>
+              <key>CFBundleIconFile</key>
+              <string>${{ env.APPLICATION_NAME }}</string>
               <key>CFBundleVersion</key>
               <string>${CLEAN_VERSION}</string>
               <key>CFBundleShortVersionString</key>
@@ -166,37 +192,26 @@ jobs:
           ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
           xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
           xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
-      - name: Upload release assets
+      - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          
           _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             _filename=${_filename}.exe
           fi
-          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" ]]; then
+          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
             cp ${{ env.APPLICATION_NAME }} ${_filename}
           fi
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
             _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
             zip -r ${_filename} ${{ env.APPLICATION_NAME }}.app
           fi
-          if [[ "${{ matrix.os }}" == "linux" ]]; then
-            for file in ${_filename} ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig blinklabs-io-release-signing-key.asc; do
-              curl \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary @"$file" \
-                "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$(basename "$file")"
-            done
-          fi
-          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "darwin" ]]; then 
-            curl \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @${_filename} \
-              https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
-          fi
+          curl \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @${_filename} \
+            https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+
       - name: Attest binary
         uses: actions/attest-build-provenance@v2
         with:
@@ -204,6 +219,8 @@ jobs:
 
   finalize-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     needs: [create-draft-release, build-binaries]
     steps:
       - uses: actions/github-script@v7
