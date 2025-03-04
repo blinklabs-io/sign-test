@@ -206,11 +206,22 @@ jobs:
             _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.zip
             zip -r ${_filename} ${{ env.APPLICATION_NAME }}.app
           fi
-          curl \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @${_filename} \
-            https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+          if [[ "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
+            for file in ${_filename} ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig blinklabs-io-release-signing-key.asc; do
+              curl \
+                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$file" \
+                "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$(basename "$file")"
+            done
+          fi
+          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "darwin" ]]; then 
+            curl \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @${_filename} \
+              https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+          fi
 
       - name: Attest binary
         uses: actions/attest-build-provenance@v2
