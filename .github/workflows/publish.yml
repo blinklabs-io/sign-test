@@ -238,9 +238,6 @@ jobs:
           # Set proper permissions
           chmod 755 "/Applications/${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}"
           
-          # Create an alias in the Applications folder for easy access via Spotlight
-          touch "/Applications/${{ env.APPLICATION_NAME }}" > /dev/null 2>&1
-          
           exit 0
           EOF
           
