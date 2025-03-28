@@ -17,7 +17,7 @@ jobs:
       RELEASE_ID: ${{ steps.create-release.outputs.result }}
     steps:
       - run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         id: create-release
         if: startsWith(github.ref, 'refs/tags/')
         with:
@@ -88,10 +88,10 @@ jobs:
       - name: Set RELEASE_TAG
         if: matrix.os != 'windows'
         run: "echo \"RELEASE_TAG=${GITHUB_REF#refs/tags/}\" >> $GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: '0'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
         with:
           go-version: 1.23.x
       - name: Build binary
@@ -114,7 +114,7 @@ jobs:
           Start-Process -FilePath .\wix311.exe -ArgumentList "/install","/quiet" -NoNewWindow -Wait
           echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         with:
           java-version: 17
@@ -122,12 +122,12 @@ jobs:
       - id: 'auth'
         name: Authenticate with Google Cloud
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
-        uses: 'google-github-actions/auth@v2'
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
         with:
           credentials_json: '${{ secrets.CERTIFICATE_SA_CREDENTIALS }}'
       - name: Set up Cloud SDK
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
-        uses: 'google-github-actions/setup-gcloud@v2'
+        uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a # v2.1.4
       - name: Sign windows binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         shell: pwsh
@@ -562,12 +562,12 @@ jobs:
 
       - name: Attest binary (Windows)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
         with:
           subject-path: '${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi'
       - name: Attest binary
         if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
         with:
           subject-path: '${{ env.APPLICATION_NAME }}'
   finalize-release:
@@ -576,7 +576,7 @@ jobs:
       contents: write
     needs: [create-draft-release, build-binaries]
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
