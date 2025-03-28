@@ -211,13 +211,6 @@ jobs:
             
             <?define UpgradeCode = "$upgradeCode" ?>
 
-            <SummaryInformation
-              Title="Blink Labs ${{ env.APPLICATION_NAME }}"
-              Description="Installer for ${{ env.APPLICATION_NAME }}"
-              Keywords="Installer, MSI, Blink Labs"
-              Manufacturer="Blink Labs Software"
-              Subject="Command line tool for signing tests" />
-
             <Product Id="*" 
                      Name="${{ env.APPLICATION_NAME }}" 
                      Language="1033" 
@@ -227,6 +220,7 @@ jobs:
               
               <Package InstallerVersion="200" 
                        Compressed="yes" 
+                       Title="Blink Labs ${{ env.APPLICATION_NAME }}"
                        InstallScope="perMachine"
                        Description="Installer for ${{ env.APPLICATION_NAME }} ${{ env.RELEASE_TAG }}"
                        Comments="(c) $currentYear Blink Labs Software" />
