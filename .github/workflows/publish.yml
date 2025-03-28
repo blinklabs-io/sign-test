@@ -547,11 +547,16 @@ jobs:
               "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}"
           fi
 
+      - name: Attest binary (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: '${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi'
       - name: Attest binary
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: '${{ env.APPLICATION_NAME }}'
-
   finalize-release:
     runs-on: ubuntu-latest
     permissions:
