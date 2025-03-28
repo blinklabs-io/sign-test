@@ -171,6 +171,9 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         run: |
           $version = "${{ env.RELEASE_TAG }}".TrimStart('v')
+          Write-Host "Using version: $version"
+          $currentYear = (Get-Date).Year
+          Write-Host "Using current year for copyright: $currentYear"
           
           Copy-Item LICENSE -Destination License.txt
 
@@ -219,11 +222,11 @@ jobs:
                        Compressed="yes" 
                        InstallScope="perMachine"
                        Description="Installer for ${{ env.APPLICATION_NAME }}"
-                       Comments="(c) 2025 Blink Labs Software" />
+                       Comments="(c) $currentYear Blink Labs Software" />
               
               <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." 
                             Schedule="afterInstallInitialize"
-                            AllowSameVersionUpgrades="yes" />
+                            AllowSameVersionUpgrades="no" />
               
               <MediaTemplate EmbedCab="yes" />
               
@@ -504,20 +507,29 @@ jobs:
 
           # Clean up temporary files
           rm -rf notarization.zip scripts distribution.xml package dmg_contents
+      - name: Upload release asset (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $filename = "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi"
+          
+          Write-Host "Uploading file: $filename"
+          
+          # Upload MSI file using PowerShell
+          $headers = @{
+            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
+            "Content-Type" = "application/octet-stream"
+          }
+          
+          $uploadUrl = "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$filename"
+          
+          Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -InFile $filename
       - name: Upload release asset
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os != 'windows'
         run: |
           _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            _filename=${_filename}.msi
-          fi
-          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
-            cp ${{ env.APPLICATION_NAME }} ${_filename}
-          fi
-          if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
-          fi
           if [[ "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
+            cp ${{ env.APPLICATION_NAME }} ${_filename}
             for file in ${_filename} ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig blinklabs-io-release-signing-key.asc; do
               curl \
                 -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
@@ -526,12 +538,13 @@ jobs:
                 "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=$(basename "$file")"
             done
           fi
-          if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "darwin" ]]; then 
+          if [[ "${{ matrix.os }}" == "darwin" ]]; then
+            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
             curl \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary @${_filename} \
-              https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ needs.create-draft-release.outputs.RELEASE_ID }}/assets?name=${_filename}"
           fi
 
       - name: Attest binary
