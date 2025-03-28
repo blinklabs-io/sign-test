@@ -297,180 +297,180 @@ jobs:
           gpg --verify ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig ${{ env.APPLICATION_NAME }}
           echo -n "${{ secrets.GPG_RELEASE_SIGNING_PUBLIC_KEY }}" | base64 --decode > blinklabs-io-release-signing-key.asc
 
-#      # Sign macOS build and create installer package with DMG
-#
-#      - name: Create .app package, sign, and create installer DMG for macOS
-#        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
-#        run: |
-#          echo "Decoding and importing Apple certificates..."
-#          echo -n "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode -o apple_certificate.p12
-#          echo -n "${{ secrets.APPLE_INSTALLER_CERTIFICATE }}" | base64 --decode -o apple_installer_certificate.p12
-#          security create-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-#          security default-keychain -s build.keychain
-#          security set-keychain-settings -lut 21600 build.keychain
-#          security unlock-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-#          security import apple_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-#          security import apple_installer_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/productsign
-#          security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
-#
-#          echo "Packaging ${{ env.APPLICATION_NAME }}..."
-#          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/MacOS
-#          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/Resources
-#          cp ${{ env.APPLICATION_NAME }} ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
-#          chmod +x ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
-#          cp .github/assets/${{ env.APPLICATION_NAME }}.icns ${{ env.APPLICATION_NAME }}.app/Contents/Resources
-#
-#          export RELEASE_TAG="${{ env.RELEASE_TAG }}"
-#          CLEAN_VERSION="${RELEASE_TAG#v}"
-#
-#          # Create enhanced Info.plist
-#          cat <<EOF > ${{ env.APPLICATION_NAME }}.app/Contents/Info.plist
-#          <?xml version="1.0" encoding="UTF-8"?>
-#          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-#          <plist version="1.0">
-#          <dict>
-#              <key>CFBundleExecutable</key>
-#              <string>${{ env.APPLICATION_NAME }}</string>
-#              <key>CFBundleIdentifier</key>
-#              <string>com.blinklabssoftware.${{ env.APPLICATION_NAME }}</string>
-#              <key>CFBundleName</key>
-#              <string>${{ env.APPLICATION_NAME }}</string>
-#              <key>CFBundleIconFile</key>
-#              <string>${{ env.APPLICATION_NAME }}</string>
-#              <key>CFBundleVersion</key>
-#              <string>${CLEAN_VERSION}</string>
-#              <key>CFBundleShortVersionString</key>
-#              <string>${CLEAN_VERSION}</string>
-#              <key>CFBundlePackageType</key>
-#              <string>APPL</string>
-#              <key>LSApplicationCategoryType</key>
-#              <string>public.app-category.utilities</string>
-#          </dict>
-#          </plist>
-#          EOF
-#
-#          # Sign the app
-#          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime ${{ env.APPLICATION_NAME }}.app -v
-#
-#          # Store notarization credentials
-#          xcrun notarytool store-credentials "notarytool-profile" --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
-#
-#          # Notarize the app
-#          ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
-#          xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
-#          xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
-#
-#          # Create scripts directory for pkg installer
-#          mkdir -p scripts
-#
-#          # Create a postinstall script for the package
-#          cat > scripts/postinstall << EOF
-#          #!/bin/bash
-#
-#          # Create a symlink to the CLI tool in /usr/local/bin
-#          mkdir -p /usr/local/bin
-#          ln -sf "/Applications/${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}" "/usr/local/bin/${{ env.APPLICATION_NAME }}"
-#
-#          # Set proper permissions
-#          chmod 755 "/Applications/${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}"
-#
-#          exit 0
-#          EOF
-#
-#          # Make the script executable
-#          chmod +x scripts/postinstall
-#
-#          # Create a temporary directory for package building
-#          mkdir -p package/Applications
-#
-#          # Copy the app bundle to the package directory
-#          cp -R "${{ env.APPLICATION_NAME }}.app" package/Applications/
-#
-#          # Create the component package
-#          pkgbuild --root package \
-#                   --install-location "/" \
-#                   --scripts scripts \
-#                   --identifier "com.blinklabssoftware.${{ env.APPLICATION_NAME }}" \
-#                   --version "${CLEAN_VERSION}" \
-#                   "${{ env.APPLICATION_NAME }}.pkg"
-#
-#          # Create distribution.xml for the installer
-#          cat > distribution.xml << EOF
-#          <?xml version="1.0" encoding="utf-8"?>
-#          <installer-gui-script minSpecVersion="1">
-#              <title>${{ env.APPLICATION_NAME }} Installer</title>
-#              <organization>com.blinklabssoftware</organization>
-#              <domains enable_localSystem="true"/>
-#              <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
-#              <pkg-ref id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}"/>
-#              <choices-outline>
-#                  <line choice="default">
-#                      <line choice="com.blinklabssoftware.${{ env.APPLICATION_NAME }}"/>
-#                  </line>
-#              </choices-outline>
-#              <choice id="default"/>
-#              <choice id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}" visible="false">
-#                  <pkg-ref id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}"/>
-#              </choice>
-#              <pkg-ref id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}" version="${CLEAN_VERSION}" onConclusion="none">${{ env.APPLICATION_NAME }}.pkg</pkg-ref>
-#          </installer-gui-script>
-#          EOF
-#
-#          # Build the product archive
-#          productbuild --distribution distribution.xml \
-#                       --package-path . \
-#                       --version "${CLEAN_VERSION}" \
-#                       "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}.pkg"
-#
-#          # Sign the package
-#          productsign --sign "Developer ID Installer: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" \
-#                      "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}.pkg" \
-#                      "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg"
-#
-#          # Notarize the package
-#          xcrun notarytool submit "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg" --keychain-profile "notarytool-profile" --wait
-#
-#          # Staple the notarization ticket
-#          xcrun stapler staple "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg"
-#
-#          # Create DMG with both the app and installer package
-#          mkdir -p dmg_contents
-#          cp -R "${{ env.APPLICATION_NAME }}.app" dmg_contents/
-#          cp "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg" dmg_contents/
-#
-#          # Create README.txt file
-#          cat > dmg_contents/README.txt << EOF
-#          ${{ env.APPLICATION_NAME }} ${CLEAN_VERSION}
-#
-#          To install:
-#          1. Double-click the installer package to install
-#          - OR -
-#          2. Drag the application to your Applications folder
-#
-#          After installation, you can run ${{ env.APPLICATION_NAME }} from:
-#          - Spotlight (Command+Space, then type "${{ env.APPLICATION_NAME }}")
-#          - Launchpad
-#          - Terminal (just type "${{ env.APPLICATION_NAME }}" from any directory)
-#          EOF
-#
-#          # Create the DMG
-#          hdiutil create -volname "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}" \
-#                         -srcfolder dmg_contents \
-#                         -ov \
-#                         -format UDZO \
-#                         "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg"
-#
-#          # Sign the DMG
-#          codesign --force --sign "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg"
-#
-#          # Notarize the DMG
-#          xcrun notarytool submit "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg" --keychain-profile "notarytool-profile" --wait
-#
-#          # Staple the DMG
-#          xcrun stapler staple "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg"
-#
-#          # Clean up temporary files
-#          rm -rf notarization.zip scripts distribution.xml package dmg_contents
+      # Sign macOS build and create installer package with DMG
+
+      - name: Create .app package, sign, and create installer DMG for macOS
+        if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'darwin' }}
+        run: |
+          echo "Decoding and importing Apple certificates..."
+          echo -n "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode -o apple_certificate.p12
+          echo -n "${{ secrets.APPLE_INSTALLER_CERTIFICATE }}" | base64 --decode -o apple_installer_certificate.p12
+          security create-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
+          security default-keychain -s build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
+          security import apple_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security import apple_installer_certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "${{ secrets.APPLE_KEYCHAIN_PASSWORD }}" build.keychain
+
+          echo "Packaging ${{ env.APPLICATION_NAME }}..."
+          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/MacOS
+          mkdir -p ${{ env.APPLICATION_NAME }}.app/Contents/Resources
+          cp ${{ env.APPLICATION_NAME }} ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          chmod +x ${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}
+          cp .github/assets/${{ env.APPLICATION_NAME }}.icns ${{ env.APPLICATION_NAME }}.app/Contents/Resources
+
+          export RELEASE_TAG="${{ env.RELEASE_TAG }}"
+          CLEAN_VERSION="${RELEASE_TAG#v}"
+
+          # Create enhanced Info.plist
+          cat <<EOF > ${{ env.APPLICATION_NAME }}.app/Contents/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>${{ env.APPLICATION_NAME }}</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.blinklabssoftware.${{ env.APPLICATION_NAME }}</string>
+              <key>CFBundleName</key>
+              <string>${{ env.APPLICATION_NAME }}</string>
+              <key>CFBundleIconFile</key>
+              <string>${{ env.APPLICATION_NAME }}</string>
+              <key>CFBundleVersion</key>
+              <string>${CLEAN_VERSION}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${CLEAN_VERSION}</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>LSApplicationCategoryType</key>
+              <string>public.app-category.utilities</string>
+          </dict>
+          </plist>
+          EOF
+
+          # Sign the app
+          /usr/bin/codesign --force -s "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" --options runtime ${{ env.APPLICATION_NAME }}.app -v
+
+          # Store notarization credentials
+          xcrun notarytool store-credentials "notarytool-profile" --apple-id "${{ secrets.APPLE_ID }}" --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
+
+          # Notarize the app
+          ditto -c -k --keepParent "${{ env.APPLICATION_NAME }}.app" "notarization.zip"
+          xcrun notarytool submit "notarization.zip" --keychain-profile "notarytool-profile" --wait
+          xcrun stapler staple "${{ env.APPLICATION_NAME }}.app"
+
+          # Create scripts directory for pkg installer
+          mkdir -p scripts
+
+          # Create a postinstall script for the package
+          cat > scripts/postinstall << EOF
+          #!/bin/bash
+
+          # Create a symlink to the CLI tool in /usr/local/bin
+          mkdir -p /usr/local/bin
+          ln -sf "/Applications/${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}" "/usr/local/bin/${{ env.APPLICATION_NAME }}"
+
+          # Set proper permissions
+          chmod 755 "/Applications/${{ env.APPLICATION_NAME }}.app/Contents/MacOS/${{ env.APPLICATION_NAME }}"
+
+          exit 0
+          EOF
+
+          # Make the script executable
+          chmod +x scripts/postinstall
+
+          # Create a temporary directory for package building
+          mkdir -p package/Applications
+
+          # Copy the app bundle to the package directory
+          cp -R "${{ env.APPLICATION_NAME }}.app" package/Applications/
+
+          # Create the component package
+          pkgbuild --root package \
+                   --install-location "/" \
+                   --scripts scripts \
+                   --identifier "com.blinklabssoftware.${{ env.APPLICATION_NAME }}" \
+                   --version "${CLEAN_VERSION}" \
+                   "${{ env.APPLICATION_NAME }}.pkg"
+
+          # Create distribution.xml for the installer
+          cat > distribution.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="1">
+              <title>${{ env.APPLICATION_NAME }} Installer</title>
+              <organization>com.blinklabssoftware</organization>
+              <domains enable_localSystem="true"/>
+              <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+              <pkg-ref id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}"/>
+              <choices-outline>
+                  <line choice="default">
+                      <line choice="com.blinklabssoftware.${{ env.APPLICATION_NAME }}"/>
+                  </line>
+              </choices-outline>
+              <choice id="default"/>
+              <choice id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}" visible="false">
+                  <pkg-ref id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}"/>
+              </choice>
+              <pkg-ref id="com.blinklabssoftware.${{ env.APPLICATION_NAME }}" version="${CLEAN_VERSION}" onConclusion="none">${{ env.APPLICATION_NAME }}.pkg</pkg-ref>
+          </installer-gui-script>
+          EOF
+
+          # Build the product archive
+          productbuild --distribution distribution.xml \
+                       --package-path . \
+                       --version "${CLEAN_VERSION}" \
+                       "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}.pkg"
+
+          # Sign the package
+          productsign --sign "Developer ID Installer: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" \
+                      "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}.pkg" \
+                      "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg"
+
+          # Notarize the package
+          xcrun notarytool submit "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg" --keychain-profile "notarytool-profile" --wait
+
+          # Staple the notarization ticket
+          xcrun stapler staple "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg"
+
+          # Create DMG with both the app and installer package
+          mkdir -p dmg_contents
+          cp -R "${{ env.APPLICATION_NAME }}.app" dmg_contents/
+          cp "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}-signed.pkg" dmg_contents/
+
+          # Create README.txt file
+          cat > dmg_contents/README.txt << EOF
+          ${{ env.APPLICATION_NAME }} ${CLEAN_VERSION}
+
+          To install:
+          1. Double-click the installer package to install
+          - OR -
+          2. Drag the application to your Applications folder
+
+          After installation, you can run ${{ env.APPLICATION_NAME }} from:
+          - Spotlight (Command+Space, then type "${{ env.APPLICATION_NAME }}")
+          - Launchpad
+          - Terminal (just type "${{ env.APPLICATION_NAME }}" from any directory)
+          EOF
+
+          # Create the DMG
+          hdiutil create -volname "${{ env.APPLICATION_NAME }}-${CLEAN_VERSION}" \
+                         -srcfolder dmg_contents \
+                         -ov \
+                         -format UDZO \
+                         "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg"
+
+          # Sign the DMG
+          codesign --force --sign "Developer ID Application: Blink Labs Software (${{ secrets.APPLE_TEAM_ID }})" "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg"
+
+          # Notarize the DMG
+          xcrun notarytool submit "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg" --keychain-profile "notarytool-profile" --wait
+
+          # Staple the DMG
+          xcrun stapler staple "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg"
+
+          # Clean up temporary files
+          rm -rf notarization.zip scripts distribution.xml package dmg_contents
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -481,9 +481,9 @@ jobs:
           if [[ "${{ matrix.os }}" == "windows" || "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
             cp ${{ env.APPLICATION_NAME }} ${_filename}
           fi
-#          if [[ "${{ matrix.os }}" == "darwin" ]]; then
-#            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
-#          fi
+          if [[ "${{ matrix.os }}" == "darwin" ]]; then
+            _filename=${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.dmg
+          fi
           if [[ "${{ matrix.os }}" == "linux" || "${{ matrix.os }}" == "freebsd" ]]; then
             for file in ${_filename} ${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.sig blinklabs-io-release-signing-key.asc; do
               curl \
