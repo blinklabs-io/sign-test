@@ -172,13 +172,25 @@ jobs:
           $rtfContent = $rtfHeader + $rtfContent + $rtfFooter
           $rtfContent | Out-File -FilePath License.rtf -Encoding ascii
           
-          $namespace = [Guid]::new("B1C0DE00-1AB5-45F3-B11C-1AB550F7ACE5")
+          $appNameBytes = [System.Text.Encoding]::UTF8.GetBytes("BlinkLabsApp:${{ env.APPLICATION_NAME }}")
+          $md5 = New-Object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider
+          $hashBytes = $md5.ComputeHash($appNameBytes)
           
-          $upgradeCodeBytes = [System.Text.Encoding]::UTF8.GetBytes("BlinkLabs-UpgradeCode-${{ env.APPLICATION_NAME }}")
-          $upgradeCodeHash = [System.Security.Cryptography.SHA1]::Create().ComputeHash($upgradeCodeBytes)
-          $upgradeCodeHash[6] = ($upgradeCodeHash[6] -band 0x0F) -bor 0x50 # Version 5
-          $upgradeCodeHash[8] = ($upgradeCodeHash[8] -band 0x3F) -bor 0x80 # Variant 1
-          $upgradeCode = [Guid]::new($upgradeCodeHash[0..15])
+          $upgradeCode = [System.Guid]::new(
+              [BitConverter]::ToInt32($hashBytes, 0),
+              [BitConverter]::ToInt16($hashBytes, 4),
+              [BitConverter]::ToInt16($hashBytes, 6),
+              $hashBytes[8],
+              $hashBytes[9],
+              $hashBytes[10],
+              $hashBytes[11],
+              $hashBytes[12],
+              $hashBytes[13],
+              $hashBytes[14],
+              $hashBytes[15]
+          )
+          
+          Write-Host "Generated UpgradeCode: $upgradeCode for ${{ env.APPLICATION_NAME }}"
           
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
