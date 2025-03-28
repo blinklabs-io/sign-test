@@ -167,7 +167,7 @@ jobs:
           Write-Host "Signed Windows binary: $filename"
           Write-Host "Cleaning up certificate chain"
           Remove-Item -Path "codesign-chain.pem" -Force
-      - name: Create Windows MSI installer
+      - name: Create and sign Windows MSI installer
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         run: |
           $version = "${{ env.RELEASE_TAG }}".TrimStart('v')
@@ -210,7 +210,14 @@ jobs:
                xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
             
             <?define UpgradeCode = "$upgradeCode" ?>
-            
+
+            <SummaryInformation
+              Title="Blink Labs ${{ env.APPLICATION_NAME }}"
+              Description="Installer for ${{ env.APPLICATION_NAME }}"
+              Keywords="Installer, MSI, Blink Labs"
+              Manufacturer="Blink Labs Software"
+              Subject="Command line tool for signing tests" />
+
             <Product Id="*" 
                      Name="${{ env.APPLICATION_NAME }}" 
                      Language="1033" 
@@ -221,8 +228,10 @@ jobs:
               <Package InstallerVersion="200" 
                        Compressed="yes" 
                        InstallScope="perMachine"
-                       Description="Installer for ${{ env.APPLICATION_NAME }}"
+                       Description="Installer for ${{ env.APPLICATION_NAME }} ${{ env.RELEASE_TAG }}"
                        Comments="(c) $currentYear Blink Labs Software" />
+              
+              <Icon Id="ApplicationIcon" SourceFile=".github/assets/${{ env.APPLICATION_NAME }}.ico"/>
               
               <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." 
                             Schedule="afterInstallInitialize"
@@ -235,6 +244,9 @@ jobs:
               <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
               
               <Property Id="ARPURLINFOABOUT" Value="https://blinklabs.io" />
+              <Property Id="ARPCONTACT" Value="Blink Labs Software" />
+              <Property Id="ARPCOMMENTS" Value="Command line tool for signing tests" />
+              <Property Id="ARPPRODUCTICON" Value="ApplicationIcon" />
               
               <Feature Id="ProductFeature" Title="${{ env.APPLICATION_NAME }}" Level="1">
                 <ComponentGroupRef Id="ProductComponents" />
@@ -289,19 +301,21 @@ jobs:
           candle -ext WixUIExtension Product.wxs -o Product.wixobj
           
           light -ext WixUIExtension Product.wixobj -o "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi"
-          
-          if ($env:CERTIFICATE_SA_CREDENTIALS) {
-            $AccessToken = gcloud auth print-access-token
-            java -jar jsign.jar `
-              --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
-              --storepass "$AccessToken" `
-              --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
-              --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
-              --certfile codesign-chain.pem `
-              --tsmode RFC3161 `
-              --tsaurl http://timestamp.globalsign.com/tsa/r6advanced1 `
-              "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi"
-          }
+
+          $ACCESS_TOKEN = & gcloud auth print-access-token
+          Write-Host "::add-mask::$ACCESS_TOKEN"
+
+          java -jar jsign.jar `
+            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
+            --storepass "$ACCESS_TOKEN" `
+            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
+            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
+            --certfile "codesign-chain.pem" `
+            --tsmode RFC3161 `
+            --tsaurl "http://timestamp.globalsign.com/tsa/r6advanced1" `
+            "${{ env.APPLICATION_NAME }}-${{ env.RELEASE_TAG }}-${{ matrix.os }}-${{ matrix.arch }}.msi"
+
+          $ACCESS_TOKEN = $null
 
       # Sign Linux build
 
