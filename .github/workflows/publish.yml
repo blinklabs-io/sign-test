@@ -121,30 +121,43 @@ jobs:
         uses: 'google-github-actions/setup-gcloud@v2'
       - name: Sign windows binary
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
+        shell: pwsh
         run: |
-          echo "Downloading jsign.jar"
-          curl -L -o jsign.jar https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar
-          echo "Verifying jsign.jar checksum"
-          echo '05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a  jsign.jar' | sha256sum -c
-          echo "${{ secrets.CERTIFICATE_CHAIN }}" | base64 --decode > codesign-chain.pem
-          set +x
-          _filename=${{ env.APPLICATION_NAME }}
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
-          echo "::add-mask::$ACCESS_TOKEN"
-          java -jar jsign.jar \
-            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} \
-            --storepass "$ACCESS_TOKEN" \
-            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} \
-            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} \
-            --certfile codesign-chain.pem \
-            --tsmode RFC3161 \
-            --tsaurl http://timestamp.globalsign.com/tsa/r6advanced1 \
-            ${_filename}
-          unset ACCESS_TOKEN
-          set -x
-          echo "Signed Windows binary: ${_filename}"
-          echo "Cleaning up certificate chain"
-          rm -f codesign-chain.pem
+          Write-Host "Downloading jsign.jar"
+          Invoke-WebRequest -Uri "https://github.com/ebourg/jsign/releases/download/6.0/jsign-6.0.jar" -OutFile "jsign.jar"
+
+          Write-Host "Verifying jsign.jar checksum"
+          $expectedHash = "05ca18d4ab7b8c2183289b5378d32860f0ea0f3bdab1f1b8cae5894fb225fa8a"
+          $actualHash = (Get-FileHash -Path "jsign.jar" -Algorithm SHA256).Hash.ToLower()
+
+          if ($actualHash -ne $expectedHash) {
+            Write-Error "Hash verification failed for jsign.jar"
+            Write-Error "Expected: $expectedHash"
+            Write-Error "Actual: $actualHash"
+            exit 1
+          }
+
+          [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("${{ secrets.CERTIFICATE_CHAIN }}")) | Out-File -FilePath "codesign-chain.pem" -Encoding utf8
+
+          $filename = "${{ env.APPLICATION_NAME }}.exe"
+          $ACCESS_TOKEN = & gcloud auth print-access-token
+          Write-Host "::add-mask::$ACCESS_TOKEN"
+
+          java -jar jsign.jar `
+            --storetype ${{ secrets.CERTIFICATE_STORE_TYPE }} `
+            --storepass "$ACCESS_TOKEN" `
+            --keystore ${{ secrets.CERTIFICATE_KEYSTORE }} `
+            --alias ${{ secrets.CERTIFICATE_KEY_NAME }} `
+            --certfile "codesign-chain.pem" `
+            --tsmode RFC3161 `
+            --tsaurl "http://timestamp.globalsign.com/tsa/r6advanced1" `
+            $filename
+
+          $ACCESS_TOKEN = $null
+
+          Write-Host "Signed Windows binary: $filename"
+          Write-Host "Cleaning up certificate chain"
+          Remove-Item -Path "codesign-chain.pem" -Force
       - name: Create Windows MSI installer
         if: ${{ startsWith(github.ref, 'refs/tags/') && matrix.os == 'windows' }}
         run: |
