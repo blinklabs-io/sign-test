@@ -56,9 +56,9 @@ jobs:
 #          - runner: ubuntu-latest
 #            os: linux
 #            arch: amd64
-#          - runner: ubuntu-latest
-#            os: linux
-#            arch: arm64
+          - runner: ubuntu-latest
+            os: linux
+            arch: arm64
           - runner: windows-latest
             os: windows
             arch: amd64
@@ -172,7 +172,7 @@ jobs:
           $rtfContent = $rtfHeader + $rtfContent + $rtfFooter
           $rtfContent | Out-File -FilePath License.rtf -Encoding ascii
           
-          $namespace = [Guid]::new("B1C0DE00-1AB5-45F3-B11C-1AB550F7WARE")
+          $namespace = [Guid]::new("B1C0DE00-1AB5-45F3-B11C-1AB550F7ACE5")
           
           $upgradeCodeBytes = [System.Text.Encoding]::UTF8.GetBytes("BlinkLabs-UpgradeCode-${{ env.APPLICATION_NAME }}")
           $upgradeCodeHash = [System.Security.Cryptography.SHA1]::Create().ComputeHash($upgradeCodeBytes)
