@@ -232,7 +232,6 @@ jobs:
               <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
               
               <Property Id="ARPURLINFOABOUT" Value="https://blinklabs.io" />
-              <Property Id="ARPNOMODIFY" Value="1" />
               
               <Feature Id="ProductFeature" Title="${{ env.APPLICATION_NAME }}" Level="1">
                 <ComponentGroupRef Id="ProductComponents" />
